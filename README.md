@@ -55,3 +55,5 @@ server-monitoring-dashboard/
 - Docker deployment
 - Cloud deployment
 - More performance graphs
+- Git pull demonstrate: remote update.
+- 
