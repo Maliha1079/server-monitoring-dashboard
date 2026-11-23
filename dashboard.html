@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Server Monitoring Dashboard</title>
+<meta charset="UTF-8">
+
+<style>
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: #0b1120;
+    color: #e5e7eb;
+    font-family: Arial, sans-serif;
+}
+
+header {
+    padding: 25px 35px;
+    background: #111827;
+    border-bottom: 1px solid #263247;
+}
+
+header h1 { margin: 0; }
+header p { color: #9ca3af; }
+
+main { padding: 30px; }
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+}
+
+.card {
+    background: #172033;
+    padding: 22px;
+    border-radius: 14px;
+    border: 1px solid #263247;
+}
+
+.card h3 { color: #9ca3af; margin-top: 0; }
+
+.metric {
+    font-size: 32px;
+    font-weight: bold;
+    margin: 15px 0;
+}
+
+.bar {
+    height: 10px;
+    background: #293449;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.fill {
+    height: 100%;
+    width: 0%;
+    background: #38bdf8;
+    transition: width 0.5s;
+}
+
+.warning { background: #f59e0b; }
+.danger { background: #ef4444; }
+
+.panel {
+    margin-top: 25px;
+    padding: 22px;
+    background: #172033;
+    border: 1px solid #263247;
+    border-radius: 14px;
+}
+
+canvas {
+    width: 100%;
+    height: 250px;
+}
+
+.info {
+    color: #9ca3af;
+    line-height: 1.8;
+}
+
+button {
+    background: #38bdf8;
+    color: #07111f;
+    border: 0;
+    padding: 12px 20px;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.status { color: #4ade80; }
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>🖥 Server Monitoring Dashboard</h1>
+    <p>DevOps | System Performance Monitoring</p>
+    <span class="status" id="status">● Connecting...</span>
+</header>
+
+<main>
+
+<div class="panel">
+    <h2>System Alerts</h2>
+    <div id="alerts" class="info">
+        Waiting for system data...
+    </div>
+</div>
+
+    <div class="cards">
+
+<div class="card">
+<h3>CPU Usage</h3>
+<div class="metric" id="cpu">--%</div>
+<div class="bar"><div class="fill" id="cpuBar"></div></div>
+</div>
+
+<div class="card">
+<h3>Memory Usage</h3>
+<div class="metric" id="ram">--%</div>
+<div class="info" id="ramInfo"></div>
+<div class="bar"><div class="fill" id="ramBar"></div></div>
+</div>
+
+<div class="card">
+<h3>Disk Usage (C:)</h3>
+<div class="metric" id="disk">--%</div>
+<div class="info" id="diskInfo"></div>
+<div class="bar"><div class="fill" id="diskBar"></div></div>
+</div>
+
+<div class="card">
+<h3>System Uptime</h3>
+<div class="metric" id="uptime">--</div>
+<div class="info">System running time</div>
+</div>
+
+</div>
+
+<div class="panel">
+<h2>CPU Performance History</h2>
+<canvas id="chart" width="1000" height="250"></canvas>
+</div>
+
+<div class="panel">
+<h2>System Information</h2>
+<div class="info" id="systemInfo">Loading...</div>
+<p class="info" id="lastUpdate"></p>
+<button onclick="refresh()">Refresh Now</button>
+</div>
+
+</main>
+
+<script>
+
+let historyData = [];
+
+function checkAlerts(data) {
+
+    let messages = [];
+
+    if (data.cpu >= 85) {
+        messages.push("⚠ High CPU usage: " + data.cpu + "%");
+    }
+
+    if (data.memory.percent >= 85) {
+        messages.push("⚠ High RAM usage: " + data.memory.percent + "%");
+    }
+
+    if (data.disk.percent >= 85) {
+        messages.push("⚠ High Disk usage: " + data.disk.percent + "%");
+    }
+
+    const alertBox = document.getElementById("alerts");
+
+    if (messages.length > 0) {
+        alertBox.innerHTML = messages.join("<br>");
+        alertBox.style.color = "#f87171";
+    } else {
+        alertBox.innerHTML = "All system resources are within normal limits.";
+        alertBox.style.color = "#4ade80";
+    }
+}
+
+function bar(id, value) {
+    const element = document.getElementById(id);
+    element.style.width = value + "%";
+    element.className = "fill";
+
+    if (value >= 85) element.classList.add("danger");
+    else if (value >= 70) element.classList.add("warning");
+}
+
+function formatUptime(seconds) {
+    let days = Math.floor(seconds / 86400);
+    let hours = Math.floor((seconds % 86400) / 3600);
+    let minutes = Math.floor((seconds % 3600) / 60);
+
+    return days + "d " + hours + "h " + minutes + "m";
+}
+
+function drawChart() {
+    const canvas = document.getElementById("chart");
+    const ctx = canvas.getContext("2d");
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.strokeStyle = "#334155";
+    ctx.fillStyle = "#9ca3af";
+    ctx.font = "14px Arial";
+
+    for (let i = 0; i <= 100; i += 25) {
+        let y = canvas.height - (i / 100) * canvas.height;
+
+        ctx.beginPath();
+        ctx.moveTo(40, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+
+        ctx.fillText(i + "%", 5, y - 5);
+    }
+
+    if (historyData.length < 2) return;
+
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+
+    historyData.forEach((value, i) => {
+        let x = 40 + i * (canvas.width - 40) /
+            (historyData.length - 1);
+        let y = canvas.height - (value / 100) *
+            canvas.height;
+
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+
+    ctx.stroke();
+}
+
+async function refresh() {
+    try {
+        const response = await fetch("/metrics");
+        if (!response.ok) throw new Error("Request failed");
+
+        const data = await response.json();
+        checkAlerts(data);
+
+        document.getElementById("cpu").textContent = data.cpu + "%";
+        bar("cpuBar", data.cpu);
+
+        document.getElementById("ram").textContent =
+            data.memory.percent + "%";
+
+        document.getElementById("ramInfo").textContent =
+            data.memory.used + " GB / " + data.memory.total + " GB";
+
+        bar("ramBar", data.memory.percent);
+
+        document.getElementById("disk").textContent =
+            data.disk.percent + "%";
+
+        document.getElementById("diskInfo").textContent =
+            data.disk.used + " GB / " + data.disk.total + " GB";
+
+        bar("diskBar", data.disk.percent);
+
+        document.getElementById("uptime").textContent =
+            formatUptime(data.uptime);
+
+        document.getElementById("systemInfo").textContent =
+            "Hostname: " + data.hostname + " | Operating System: " + data.os;
+
+        document.getElementById("status").textContent =
+            "● Monitoring Active";
+
+        document.getElementById("status").className = "status";
+
+        document.getElementById("lastUpdate").textContent =
+            "Last updated: " + new Date().toLocaleTimeString();
+
+        historyData.push(data.cpu);
+        if (historyData.length > 30) historyData.shift();
+
+        drawChart();
+
+    } catch (error) {
+        document.getElementById("status").textContent =
+            "● Connection Error";
+        document.getElementById("status").style.color = "#ef4444";
+    }
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+
+</body>
+</html>
